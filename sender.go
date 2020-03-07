@@ -135,7 +135,7 @@ func (s *Sender) Prepare() *Sender {
 	return s
 }
 
-// Publish 发布消息
+// Send 发送消息
 // msg 发送的消息结构体
 // localTx 本地事务执行函数
 // 若返回值为true表示本地事务执行成功, 则提交消息

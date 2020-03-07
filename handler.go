@@ -120,7 +120,7 @@ func (h *Handler) RunCtx(ctx context.Context) {
 	close(errChan) // 关闭错误通道, 退出错误处理协程
 }
 
-// process 处理消息
+// handleMsg 处理消息
 // 根据处理器配置对消息处理进行封装
 // 屏蔽复杂度, 确保消息高效无误的流转
 // 若返回值为true则表示处理成功, 将删除该消息

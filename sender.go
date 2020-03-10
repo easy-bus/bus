@@ -162,7 +162,7 @@ func (s *Sender) Send(msg *Message, localTx ...func() bool) bool {
 			return false
 		}
 		// 将操作日志发送至队列
-		err = s.Driver.SendToQueue(s.TxOptions.recordQueue, encode(NewMessage(id, "")), 0)
+		err = s.Driver.SendToQueue(s.TxOptions.recordQueue, encode(MessageWithId(id, id, "")), 0)
 		if err != nil {
 			return false
 		}

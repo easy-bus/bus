@@ -20,16 +20,21 @@ type Message struct {
 	Retried int `json:"r,omitempty"`
 
 	// RouteKey 路由键
-	RouteKey string `json:"rk,omitempty"`
+	RouteKey string `json:"k,omitempty"`
 }
 
 // Scan 将消息内容赋值给目标参数
 func (m *Message) Scan(dest interface{}) { decode(m.Payload, dest) }
 
-// NewMessage 实例化消息实例
-func NewMessage(payload interface{}, routeKey string) *Message {
+// MessageAutoId 实例化消息
+func MessageAutoId(payload interface{}, routeKey string) *Message {
+	return MessageWithId(utils.GenerateSeqId(), payload, routeKey)
+}
+
+// MessageWithId 实例化消息
+func MessageWithId(id string, payload interface{}, routeKey string) *Message {
 	return &Message{
-		BizUID:   utils.GenerateSeqId(),
+		BizUID:   id,
 		Payload:  encode(payload),
 		RouteKey: routeKey,
 	}

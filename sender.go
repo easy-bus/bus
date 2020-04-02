@@ -79,6 +79,16 @@ type Sender struct {
 	ready bool
 }
 
+func (s *Sender) Reset() {
+	if !s.ready {
+		return
+	}
+	if s.TxOptions != nil {
+		s.TxOptions.Context.Done()
+	}
+	s.ready = false
+}
+
 // Prepare 创建主题和日志队列
 func (s *Sender) Prepare() *Sender {
 	if s.ready {

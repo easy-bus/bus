@@ -27,7 +27,7 @@ func TestMessage(t *testing.T) {
 			"sex": "Male",
 		},
 	}
-	m1 := NewMessage(u1, "")
+	m1 := MessageAutoId(u1, "")
 	u2 := User{}
 	m2 := new(Message)
 	decode(encode(m1), m2)
@@ -118,7 +118,7 @@ func TestIdempotent(t *testing.T) {
 	mockAllNormal()
 	var num1, num2 uint32
 	exitChan := make(chan struct{})
-	originMsg := NewMessage("message.idempotent", "")
+	originMsg := MessageAutoId("message.idempotent", "")
 	handler.Idempotent = &internalIdempotent{}
 	handler.HandleFunc = func(msg *Message) bool {
 		atomic.AddUint32(&num1, 1)
@@ -147,7 +147,7 @@ func TestDLStorage(t *testing.T) {
 	prepare()
 	mockAllNormal()
 	exitChan := make(chan struct{})
-	originMsg := NewMessage("message.dl-storage", "")
+	originMsg := MessageAutoId("message.dl-storage", "")
 	handler.DLStorage = itDLS
 	handler.HandleFunc = func(msg *Message) bool {
 		assert.EqualValues(t, originMsg, msg)
@@ -177,7 +177,7 @@ func TestTransaction(t *testing.T) {
 	mockSendToTopicError()
 	var num1, num2 uint32
 	exitChan := make(chan struct{})
-	originMsg := NewMessage("message.transaction", "")
+	originMsg := MessageAutoId("message.transaction", "")
 	sender.TxOptions = &TxOptions{
 		Timeout: time.Millisecond,
 		EnsureFunc: func(msg *Message) bool {

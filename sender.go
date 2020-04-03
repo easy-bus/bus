@@ -93,9 +93,11 @@ func (s *Sender) Prepare() *Sender {
 	if s.TxOptions != nil {
 		s.TxOptions.prepare(s.Topic)
 		handler := Handler{
-			Queue:     s.TxOptions.recordQueue,
-			Driver:    s.Driver,
-			ErrorFunc: s.ErrorFunc,
+			Queue:  s.TxOptions.recordQueue,
+			Driver: s.Driver,
+			ErrorFunc: func(err error) {
+				s.ErrorFunc(fmt.Errorf("the tx handler of sender, err = %s", err))
+			},
 			HandleFunc: func(log *Message) bool {
 				var id string
 				log.Scan(&id)

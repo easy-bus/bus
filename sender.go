@@ -79,16 +79,6 @@ type Sender struct {
 	ready bool
 }
 
-func (s *Sender) Reset() {
-	if !s.ready {
-		return
-	}
-	if s.TxOptions != nil {
-		s.TxOptions.Context.Done()
-	}
-	s.ready = false
-}
-
 // Prepare 创建主题和日志队列
 func (s *Sender) Prepare() *Sender {
 	if s.ready {
@@ -172,7 +162,11 @@ func (s *Sender) Send(msg *Message, localTx ...func() bool) bool {
 			return false
 		}
 		// 将操作日志发送至队列
-		err = s.Driver.SendToQueue(s.TxOptions.recordQueue, encode(MessageWithId(id, id, "")), 0)
+		err = s.Driver.SendToQueue(
+			s.TxOptions.recordQueue,
+			encode(MessageWithId(id, id, "")),
+			s.TxOptions.Timeout,
+		)
 		if err != nil {
 			return false
 		}

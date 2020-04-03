@@ -126,12 +126,13 @@ func (h *Handler) RunCtx(ctx context.Context) {
 // 若返回值为true则表示处理成功, 将删除该消息
 // 若返回值为false则表示处理失败, 消息将延迟重试
 func (h *Handler) handleMsg(data []byte) bool {
-	var per error
-	defer h.handleError(per)
-	defer utils.PanicToError(&per)
+	var err error
+	defer h.handleError(err)
+	defer utils.PanicToError(&err)
 	var msg Message
 	decode(data, &msg)
-	allow, err := h.Idempotent.Acquire(msg.BizUID)
+	allow, e_ := h.Idempotent.Acquire(msg.BizUID)
+	err = errorWrap(e_, "idempotent acquired failed")
 	if err != nil {
 		h.handleError(err)
 		allow, err = false, nil
@@ -150,14 +151,22 @@ func (h *Handler) handleMsg(data []byte) bool {
 		delay := h.RetryDelay(msg.Retried)
 		if delay < 0 {
 			// 不进行重试, 死信存储
-			err = h.DLStorage.Store(h.Queue, data)
+			err = errorWrap(
+				h.DLStorage.Store(h.Queue, data),
+				fmt.Sprintf("dl storage store failed, queue = %s", h.Queue),
+			)
 		} else {
 			// 重新发布, 进入延迟重试
-			err = h.Driver.SendToQueue(h.Queue, encode(msg), delay)
+			err = errorWrap(
+				h.Driver.SendToQueue(h.Queue, encode(msg), delay),
+				fmt.Sprintf("send to queue [%s] with delay [%d] failed", h.Queue, delay),
+			)
 		}
-		h.handleError(err)
 		// 处理失败, 释放控制权
-		h.handleError(h.Idempotent.Release(msg.BizUID))
+		err = errorWrap(
+			h.Idempotent.Release(msg.BizUID),
+			"idempotent release failed",
+		)
 	}
 	return err == nil
 }

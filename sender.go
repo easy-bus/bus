@@ -93,11 +93,9 @@ func (s *Sender) Prepare() *Sender {
 	if s.TxOptions != nil {
 		s.TxOptions.prepare(s.Topic)
 		handler := Handler{
-			Queue:  s.TxOptions.recordQueue,
-			Driver: s.Driver,
-			ErrorFunc: func(err error) {
-				s.ErrorFunc(fmt.Errorf("the tx handler of sender, err = %s", err))
-			},
+			Queue:     s.TxOptions.recordQueue,
+			Driver:    s.Driver,
+			ErrorFunc: s.ErrorFunc,
 			HandleFunc: func(log *Message) bool {
 				var id string
 				log.Scan(&id)
@@ -144,14 +142,18 @@ func (s *Sender) Prepare() *Sender {
 // 若返回值为false表示本地事务执行失败, 则回滚消息
 func (s *Sender) Send(msg *Message, localTx ...func() bool) bool {
 	if s.ready == false {
-		panic(fmt.Sprintf("easy-bus: send is forbidden when the sender %q has not prepared", s.Topic))
+		msg := "easy-bus: send is forbidden when the sender %q has not prepared"
+		panic(fmt.Sprintf(msg, s.Topic))
 	}
 	var err error
 	defer s.handleError(err)
 	defer utils.PanicToError(&err)
 	if len(localTx) == 0 {
 		// 未使用事务, 直接发布至主题
-		err = s.Driver.SendToTopic(s.Topic, encode(msg), msg.RouteKey)
+		err = errorWrap(
+			s.Driver.SendToTopic(s.Topic, encode(msg), msg.RouteKey),
+			fmt.Sprintf("send to topic [%s] with route key [%s] failed", s.Topic, msg.RouteKey),
+		)
 		return err == nil
 	} else if s.TxOptions == nil {
 		err = errors.New("easy-bus: local tx is forbidden when sender missing tx options")
@@ -159,15 +161,15 @@ func (s *Sender) Send(msg *Message, localTx ...func() bool) bool {
 	} else {
 		data := encode(msg)
 		// 消息预发存储
-		id, err := s.TxOptions.TxStorage.Store(data)
+		id, e_ := s.TxOptions.TxStorage.Store(data)
+		err = errorWrap(e_, "tx storage store failed")
 		if err != nil {
 			return false
 		}
 		// 将操作日志发送至队列
-		err = s.Driver.SendToQueue(
-			s.TxOptions.recordQueue,
-			encode(MessageWithId(id, id, "")),
-			s.TxOptions.Timeout,
+		err = errorWrap(
+			s.Driver.SendToQueue(s.TxOptions.recordQueue, encode(MessageWithId(id, id, "")), s.TxOptions.Timeout),
+			fmt.Sprintf("send to queue [%s] failed with timeout [%d]", s.TxOptions.recordQueue, s.TxOptions.Timeout),
 		)
 		if err != nil {
 			return false
@@ -175,13 +177,22 @@ func (s *Sender) Send(msg *Message, localTx ...func() bool) bool {
 		// 执行本地事务
 		if localTx[0]() {
 			// 此时无需关心消息是否发送成功, 可依靠日志补偿处理
-			err = s.Driver.SendToTopic(s.Topic, data, msg.RouteKey)
+			err = errorWrap(
+				s.Driver.SendToTopic(s.Topic, data, msg.RouteKey),
+				fmt.Sprintf("send to topic [%s] with route key [%s] failed", s.Topic, msg.RouteKey),
+			)
 			if err == nil {
-				err = s.TxOptions.TxStorage.Remove(id)
+				err = errorWrap(
+					s.TxOptions.TxStorage.Remove(id),
+					"tx storage remove failed",
+				)
 			}
 			return true
 		}
-		err = s.TxOptions.TxStorage.Remove(id)
+		err = errorWrap(
+			s.TxOptions.TxStorage.Remove(id),
+			"tx storage remove failed",
+		)
 		return false
 	}
 }

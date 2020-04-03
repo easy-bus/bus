@@ -91,6 +91,9 @@ func (s *Sender) Prepare() *Sender {
 		panic(fmt.Sprintf("easy-bus: the sender create topic error, %v", err))
 	}
 	if s.TxOptions != nil {
+		txRemove := func(id string) {
+			s.handleError(errorWrap(s.TxOptions.TxStorage.Remove(id), "tx storage remove failed"))
+		}
 		s.TxOptions.prepare(s.Topic)
 		handler := Handler{
 			Queue:     s.TxOptions.recordQueue,
@@ -99,13 +102,14 @@ func (s *Sender) Prepare() *Sender {
 			HandleFunc: func(log *Message) bool {
 				var id string
 				log.Scan(&id)
-				data, err := s.TxOptions.TxStorage.Fetch(id)
+				data, e_ := s.TxOptions.TxStorage.Fetch(id)
+				err := errorWrap(e_, "tx storage fetch failed")
 				if err != nil {
 					s.handleError(err)
 					return false
 				} else if data == nil {
 					// 已经发布成功
-					s.handleError(s.TxOptions.TxStorage.Remove(id))
+					txRemove(id)
 					return true
 				}
 				var msg Message
@@ -114,13 +118,16 @@ func (s *Sender) Prepare() *Sender {
 					// 事务处理成功, 消息未发送
 					err = s.Driver.SendToTopic(s.Topic, data, msg.RouteKey)
 					if err == nil {
-						s.handleError(s.TxOptions.TxStorage.Remove(id))
+						txRemove(id)
 						return true
+					} else {
+						msg := fmt.Sprintf("send to topic [%s] with route key [%s] failed", s.Topic, msg.RouteKey)
+						s.handleError(errorWrap(err, msg))
 					}
 					return false
 				} else {
 					// 事务未处理成功, 消息丢弃
-					s.handleError(s.TxOptions.TxStorage.Remove(id))
+					txRemove(id)
 					return true
 				}
 			},

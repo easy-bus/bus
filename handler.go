@@ -2,8 +2,6 @@ package bus
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"time"
 
 	"github.com/letsfire/utils"
@@ -26,24 +24,18 @@ type Handler struct {
 	// Delay 消息处理延迟时长
 	Delay time.Duration
 
+	// Subscribe 订阅配置
+	Subscribe Subscribe
+
 	// Driver 驱动实例
 	Driver DriverInterface
 
-	// Subscribe 订阅配置
-	Subscribe Subscribe
+	// Logger 异常日志
+	Logger LoggerInterface
 
 	// DLStorage 死信存储
 	// 无法处理的消息最终流转到这里
 	DLStorage DLStorageInterface
-
-	// ErrorFunc 异常错误处理
-	// 通常用于记录日志并上报通知
-	ErrorFunc func(err error)
-
-	// HandleFunc 消息处理回调函数
-	// 若返回值为true则表示处理成功, 将删除该消息
-	// 若返回值为false则表示处理失败, 消息将延迟重试
-	HandleFunc func(msg *Message) (done bool)
 
 	// Idempotent 幂等判断实现
 	// 防止消息被重复处理保证数据一致性
@@ -51,11 +43,15 @@ type Handler struct {
 	// 因此再严格一致的场景下配置EnsureFn进行二次确认
 	Idempotent IdempotentInterface
 
+	// HandleFunc 消息处理回调函数
+	// 若返回值为true则表示处理成功, 将删除该消息
+	// 若返回值为false则表示处理失败, 消息将延迟重试
+	HandleFunc func(msg *Message) (done bool)
+
 	// EnsureFunc 幂等性的二次确认
 	// 请一定要注意布尔返回值的代表含义
 	// 若返回值为true表示未处理, 即允许处理
 	// 若返回值为false表示已处理, 即不允许处理
-	// 通常情况下并不会执行, 仅当Idempotent出现异常时起作用
 	// 若使用场景不严格要求数据一致的可以不用配置
 	EnsureFunc func(msg *Message) (allow bool)
 
@@ -65,6 +61,9 @@ type Handler struct {
 
 	// ready 是否就绪
 	ready bool
+
+	// 退出信号
+	quit chan struct{}
 }
 
 // Prepare 准备就绪
@@ -73,13 +72,16 @@ func (h *Handler) Prepare() *Handler {
 		return h
 	}
 	if h.Queue == "" {
-		panic("easy-bus: the handler missing queue name")
+		throw("the handler missing queue name")
 	}
 	if h.Driver == nil {
-		panic(fmt.Sprintf("easy-bus: the handler %q missing driver instance", h.Queue))
+		throw("the handler [%s] missing driver instance", h.Queue)
 	}
 	if h.HandleFunc == nil {
-		panic(fmt.Sprintf("easy-bus: the handler %q missing handle function", h.Queue))
+		throw("the handler [%s] missing handle function", h.Queue)
+	}
+	if h.Logger == nil {
+		h.Logger = stderrLogger{}
 	}
 	if h.DLStorage == nil {
 		h.DLStorage = nullDLStorage{}
@@ -87,16 +89,22 @@ func (h *Handler) Prepare() *Handler {
 	if h.Idempotent == nil {
 		h.Idempotent = nullIdempotent{}
 	}
+	if h.EnsureFunc == nil {
+		h.EnsureFunc = func(*Message) bool { return false }
+	}
 	if h.RetryDelay == nil {
 		h.RetryDelay = func(int) time.Duration { return -1 }
 	}
 	if err := h.Driver.CreateQueue(h.Queue, h.Delay); err != nil {
-		panic(fmt.Sprintf("easy-bus: then handler %q create queue error, %v", h.Queue, err))
+		throw("then handler [%s] create queue failed, %v", h.Queue, err)
 	}
 	if h.Subscribe.Topic != "" {
-		utils.Must(h.Driver.Subscribe(h.Subscribe.Topic, h.Queue, h.Subscribe.RouteKey))
+		if err := h.Driver.Subscribe(h.Subscribe.Topic, h.Queue, h.Subscribe.RouteKey); err != nil {
+			throw("then handler [%s] subscribe topic [%s] failed, %v", h.Queue, h.Subscribe.Topic, err)
+		}
 	}
 	h.ready = true
+	h.quit = make(chan struct{})
 	return h
 }
 
@@ -108,17 +116,21 @@ func (h *Handler) Run() {
 // RunCtx 启动处理器
 func (h *Handler) RunCtx(ctx context.Context) {
 	if h.ready == false {
-		panic(fmt.Sprintf("easy-bus: run is forbidden when the handler %q has not prepared", h.Queue))
+		throw("run is forbidden when the handler [%s] has not prepared", h.Queue)
 	}
 	errChan := make(chan error)
 	utils.Goroutine(func() {
 		for err := range errChan {
-			h.handleError(err)
+			h.Logger.Errorf("handler [%s] error, %v", h.Queue, err)
 		}
 	})
 	h.Driver.ReceiveMessage(ctx, h.Queue, errChan, h.handleMsg)
 	close(errChan) // 关闭错误通道, 退出错误处理协程
+	h.quit <- struct{}{}
 }
+
+// Wait 等待退出
+func (h *Handler) Wait() { <-h.quit }
 
 // handleMsg 处理消息
 // 根据处理器配置对消息处理进行封装
@@ -126,67 +138,39 @@ func (h *Handler) RunCtx(ctx context.Context) {
 // 若返回值为true则表示处理成功, 将删除该消息
 // 若返回值为false则表示处理失败, 消息将延迟重试
 func (h *Handler) handleMsg(data []byte) bool {
-	var err error
-	defer h.handleError(err)
-	defer utils.PanicToError(&err)
+	defer utils.HandlePanic(func(i interface{}) {
+		h.Logger.Errorf("handler [%s] panic, %v", h.Queue, i)
+	})
 	var msg Message
 	decode(data, &msg)
-	allow, e_ := h.Idempotent.Acquire(msg.BizUID)
-	err = errorWrap(e_, "idempotent acquired failed")
+	allow, err := h.Idempotent.Acquire(msg.BizUID)
 	if err != nil {
-		h.handleError(err)
-		allow, err = false, nil
+		allow = false // 置为false进行二次确认
+		h.Logger.Errorf("handler [%s] idempotent acquired failed, %v", err)
 	}
-	if allow == false {
-		// allow为false不允许的情况下进行二次确认
-		if allow = h.ensure(&msg); !allow {
-			// 二次确认消息已处理代表消息可删除
-			return true
+	if !allow && !h.EnsureFunc(&msg) {
+		return true // 二次确认
+	} else if h.HandleFunc(&msg) {
+		return true // 处理成功
+	}
+	// 处理失败累加次数
+	msg.Retried += 1
+	// 计算多少秒后进行重试
+	if delay := h.RetryDelay(msg.Retried); delay < 0 {
+		if err := h.DLStorage.Store(h.Queue, data); err != nil {
+			h.Logger.Errorf("handler [%s] dl store failed, v", h.Queue, err)
+			return false // 死信储存失败
 		}
-	}
-	if h.HandleFunc(&msg) == false {
-		// 处理失败累加次数
-		msg.Retried += 1
-		// 计算多少秒后进行重试
-		delay := h.RetryDelay(msg.Retried)
-		if delay < 0 {
-			// 不进行重试, 死信存储
-			err = errorWrap(
-				h.DLStorage.Store(h.Queue, data),
-				fmt.Sprintf("dl storage store failed, queue = %s", h.Queue),
-			)
-		} else {
-			// 重新发布, 进入延迟重试
-			err = errorWrap(
-				h.Driver.SendToQueue(h.Queue, encode(msg), delay),
-				fmt.Sprintf("send to queue [%s] with delay [%d] failed", h.Queue, delay),
-			)
-		}
-		// 处理失败, 释放控制权
-		err = errorWrap(
-			h.Idempotent.Release(msg.BizUID),
-			"idempotent release failed",
-		)
-	}
-	return err == nil
-}
-
-// ensure 幂等性二次确认
-func (h *Handler) ensure(msg *Message) bool {
-	if h.EnsureFunc == nil {
-		return false
-	}
-	return h.EnsureFunc(msg)
-}
-
-// handleError 异常错误处理
-func (h *Handler) handleError(err error) {
-	if err == nil {
-		return
-	}
-	if h.ErrorFunc == nil {
-		log.Printf("easy-bus: handler %q has an error, %v", h.Queue, err)
 	} else {
-		h.ErrorFunc(err)
+		// 重新发布, 进入延迟重试
+		if err := h.Driver.SendToQueue(h.Queue, encode(msg), delay); err != nil {
+			h.Logger.Errorf("handler [%s] send to queue with delay [%d] failed, %v", h.Queue, delay, err)
+			return false // 重试发送失败
+		}
 	}
+	// 处理失败, 释放控制权
+	if err := h.Idempotent.Release(msg.BizUID); err != nil {
+		h.Logger.Errorf("handler [%s] idempotent release failed, %v", err)
+	}
+	return true
 }

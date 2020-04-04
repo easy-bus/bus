@@ -2,11 +2,20 @@ package bus
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/letsfire/utils"
 )
+
+// stderrLogger 默认错误日志
+type stderrLogger struct{}
+
+func (stderrLogger) Errorf(format string, args ...interface{}) {
+	log.Println(fmt.Sprintf("easy-bus: %s", fmt.Sprintf(format, args...)))
+}
 
 // nullIdempotent 空的幂等实现
 type nullIdempotent struct{}

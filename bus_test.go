@@ -36,36 +36,6 @@ func TestMessage(t *testing.T) {
 	assert.Equal(t, u1, u2)
 }
 
-func TestSender_handleError(t *testing.T) {
-	var num int
-	s := Sender{
-		Topic: "test.handle_error",
-		ErrorFunc: func(err error) {
-			num += 1
-		},
-	}
-	s.handleError(nil)
-	s.handleError(errors.New("error"))
-	s.ErrorFunc = nil
-	s.handleError(errors.New("log println error"))
-	assert.Equal(t, num, 1)
-}
-
-func TestHandler_handleError(t *testing.T) {
-	var num int
-	h := Handler{
-		Queue: "test.handle_error",
-		ErrorFunc: func(err error) {
-			num += 1
-		},
-	}
-	h.handleError(nil)
-	h.handleError(errors.New("error"))
-	h.ErrorFunc = nil
-	h.handleError(errors.New("log println error"))
-	assert.Equal(t, num, 1)
-}
-
 var itDLS *internalDLStorage
 var itTXS *internalTXStorage
 var driver *mockDriver

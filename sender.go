@@ -2,9 +2,7 @@ package bus
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/letsfire/utils"
@@ -38,13 +36,13 @@ type TxOptions struct {
 
 func (to *TxOptions) prepare(topic string) {
 	if to.Timeout <= 0 {
-		panic("easy-bus: the timeout of tx option must greater than zero")
+		throw("sender [%s] the timeout of tx option must greater than zero", topic)
 	}
 	if to.EnsureFunc == nil {
-		panic("easy-bus: the ensure func of tx option is missing")
+		throw("sender [%s] the ensure func of tx option is missing", topic)
 	}
 	if to.TxStorage == nil {
-		panic("easy-bus: the storage of tx option is missing")
+		throw("sender [%s] the storage of tx option is missing", topic)
 	}
 	if to.Context == nil {
 		to.Context = context.Background()
@@ -68,15 +66,16 @@ type Sender struct {
 	// Driver 驱动实例
 	Driver DriverInterface
 
-	// ErrorFunc 异常错误处理
-	// 通常用于记录日志并上报通知
-	ErrorFunc func(err error)
+	// Logger 异常日志
+	Logger LoggerInterface
 
 	// TxOptions 事务配置
 	TxOptions *TxOptions
 
 	// ready 是否就绪
 	ready bool
+
+	txHandler *Handler
 }
 
 // Prepare 创建主题和日志队列
@@ -85,31 +84,30 @@ func (s *Sender) Prepare() *Sender {
 		return s
 	}
 	if s.Driver == nil {
-		panic("easy-bus: the sender missing driver instance")
+		throw("sender [%s] missing driver instance", s.Topic)
+	}
+	if s.Logger == nil {
+		s.Logger = stderrLogger{}
 	}
 	if err := s.Driver.CreateTopic(s.Topic); err != nil {
-		panic(fmt.Sprintf("easy-bus: the sender create topic error, %v", err))
+		throw("sender [%s] create topic error, %v", s.Topic, err)
 	}
 	if s.TxOptions != nil {
-		txRemove := func(id string) {
-			s.handleError(errorWrap(s.TxOptions.TxStorage.Remove(id), "tx storage remove failed"))
-		}
 		s.TxOptions.prepare(s.Topic)
-		handler := Handler{
-			Queue:     s.TxOptions.recordQueue,
-			Driver:    s.Driver,
-			ErrorFunc: s.ErrorFunc,
+		s.txHandler = &Handler{
+			Queue:  s.TxOptions.recordQueue,
+			Driver: s.Driver,
+			Logger: s.Logger,
 			HandleFunc: func(log *Message) bool {
 				var id string
 				log.Scan(&id)
-				data, e_ := s.TxOptions.TxStorage.Fetch(id)
-				err := errorWrap(e_, "tx storage fetch failed")
+				data, err := s.TxOptions.TxStorage.Fetch(id)
 				if err != nil {
-					s.handleError(err)
+					s.Logger.Errorf("sender [%s] tx fetch failed, %v", s.Topic, err)
 					return false
 				} else if data == nil {
 					// 已经发布成功
-					txRemove(id)
+					s.txRemove(id)
 					return true
 				}
 				var msg Message
@@ -118,25 +116,22 @@ func (s *Sender) Prepare() *Sender {
 					// 事务处理成功, 消息未发送
 					err = s.Driver.SendToTopic(s.Topic, data, msg.RouteKey)
 					if err == nil {
-						txRemove(id)
+						s.txRemove(id)
 						return true
-					} else {
-						msg := fmt.Sprintf("send to topic [%s] with route key [%s] failed", s.Topic, msg.RouteKey)
-						s.handleError(errorWrap(err, msg))
 					}
+					s.Logger.Errorf("sender [%s] with route key [%s] failed, %v", s.Topic, msg.RouteKey, err)
 					return false
 				} else {
 					// 事务未处理成功, 消息丢弃
-					txRemove(id)
+					s.txRemove(id)
 					return true
 				}
 			},
-			EnsureFunc: func(msg *Message) (allow bool) {
-				return true
-			},
 			RetryDelay: s.TxOptions.RetryDelay,
+			EnsureFunc: func(msg *Message) (allow bool) { return true },
 		}
-		go handler.Prepare().RunCtx(s.TxOptions.Context)
+		s.txHandler.Prepare()
+		go s.txHandler.RunCtx(s.TxOptions.Context)
 	}
 	s.ready = true
 	return s
@@ -149,69 +144,67 @@ func (s *Sender) Prepare() *Sender {
 // 若返回值为false表示本地事务执行失败, 则回滚消息
 func (s *Sender) Send(msg *Message, localTx ...func() bool) bool {
 	if s.ready == false {
-		msg := "easy-bus: send is forbidden when the sender %q has not prepared"
-		panic(fmt.Sprintf(msg, s.Topic))
+		throw("sender [%s] has not prepared", s.Topic)
 	}
-	var err error
-	defer s.handleError(err)
-	defer utils.PanicToError(&err)
+	defer utils.HandlePanic(func(i interface{}) {
+		s.Logger.Errorf("sender [%s] panic, %v", s.Topic, i)
+	})
 	if len(localTx) == 0 {
 		// 未使用事务, 直接发布至主题
-		err = errorWrap(
-			s.Driver.SendToTopic(s.Topic, encode(msg), msg.RouteKey),
-			fmt.Sprintf("send to topic [%s] with route key [%s] failed", s.Topic, msg.RouteKey),
-		)
-		return err == nil
+		if err := s.Driver.SendToTopic(s.Topic, encode(msg), msg.RouteKey); err != nil {
+			s.Logger.Errorf("sender [%s] with route key [%s] failed, %v", s.Topic, msg.RouteKey, err)
+			return false
+		}
 	} else if s.TxOptions == nil {
-		err = errors.New("easy-bus: local tx is forbidden when sender missing tx options")
+		s.Logger.Errorf("sender [%s] missing tx options", s.Topic)
 		return false
 	} else {
 		data := encode(msg)
 		// 消息预发存储
-		id, e_ := s.TxOptions.TxStorage.Store(data)
-		err = errorWrap(e_, "tx storage store failed")
+		id, err := s.TxOptions.TxStorage.Store(data)
 		if err != nil {
+			s.Logger.Errorf("sender [%s] tx store failed, %v", s.Topic, err)
 			return false
 		}
 		// 将操作日志发送至队列
-		err = errorWrap(
-			s.Driver.SendToQueue(s.TxOptions.recordQueue, encode(MessageWithId(id, id, "")), s.TxOptions.Timeout),
-			fmt.Sprintf("send to queue [%s] failed with timeout [%d]", s.TxOptions.recordQueue, s.TxOptions.Timeout),
+		err = s.Driver.SendToQueue(
+			s.TxOptions.recordQueue,
+			encode(MessageWithId(id, id, "")),
+			s.TxOptions.Timeout,
 		)
 		if err != nil {
+			s.Logger.Errorf(
+				"sender [%s] send to queue [%s] with delay [%d] failed, %v",
+				s.Topic, s.TxOptions.recordQueue, s.TxOptions.Timeout, err,
+			)
 			return false
 		}
 		// 执行本地事务
-		if localTx[0]() {
-			// 此时无需关心消息是否发送成功, 可依靠日志补偿处理
-			err = errorWrap(
-				s.Driver.SendToTopic(s.Topic, data, msg.RouteKey),
-				fmt.Sprintf("send to topic [%s] with route key [%s] failed", s.Topic, msg.RouteKey),
-			)
-			if err == nil {
-				err = errorWrap(
-					s.TxOptions.TxStorage.Remove(id),
-					"tx storage remove failed",
-				)
-			}
-			return true
+		if localTx[0]() == false {
+			s.txRemove(id) // 事务失败即可清理
+			return false
 		}
-		err = errorWrap(
-			s.TxOptions.TxStorage.Remove(id),
-			"tx storage remove failed",
-		)
-		return false
+		// 此时无需关心消息是否发送成功, 可依靠日志补偿处理
+		if err := s.Driver.SendToTopic(s.Topic, data, msg.RouteKey); err != nil {
+			s.Logger.Errorf("sender [%s] with route key [%s] failed, %v", s.Topic, msg.RouteKey, err)
+		} else {
+			s.txRemove(id) // 发送成功即可清理
+		}
 	}
+	return true
 }
 
-// handleError 异常错误处理
-func (s *Sender) handleError(err error) {
-	if err == nil {
+// Wait 等待退出
+func (s *Sender) Wait() {
+	if s.txHandler == nil {
 		return
 	}
-	if s.ErrorFunc == nil {
-		log.Printf("easy-bus: sender %q has an error, %v", s.Topic, err)
-	} else {
-		s.ErrorFunc(err)
+	s.txHandler.Wait()
+}
+
+// txRemove 内部封装,便于使用
+func (s *Sender) txRemove(id string) {
+	if err := s.TxOptions.TxStorage.Remove(id); err != nil {
+		s.Logger.Errorf("sender [%s] tx remove failed, %v", s.Topic, err)
 	}
 }

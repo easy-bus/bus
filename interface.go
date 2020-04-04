@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+type LoggerInterface interface {
+	Errorf(format string, args ...interface{})
+}
+
 // IdempotentInterface 幂等性接口
 type IdempotentInterface interface {
 	// Acquire 获取key的操作权

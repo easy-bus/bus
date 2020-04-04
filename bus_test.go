@@ -109,6 +109,7 @@ func TestIdempotent(t *testing.T) {
 		<-exitChan
 	}
 	cancelFunc()
+	handler.Wait()
 	assert.EqualValues(t, uint32(1), num1)
 	assert.EqualValues(t, uint32(4), num2)
 }
@@ -134,11 +135,9 @@ func TestDLStorage(t *testing.T) {
 	var ctx, cancelFunc = context.WithCancel(context.TODO())
 	go handler.Prepare().RunCtx(ctx)
 	sender.Send(originMsg)
-
 	<-exitChan
 	cancelFunc()
-	time.Sleep(time.Millisecond)
-
+	handler.Wait()
 	assert.Equal(t, encode(originMsg), itDLS.dataMap[handler.Queue][0])
 }
 
@@ -148,7 +147,9 @@ func TestTransaction(t *testing.T) {
 	var num1, num2 uint32
 	exitChan := make(chan struct{})
 	originMsg := MessageAutoId("message.transaction", "")
+	var ctx1, cancelFunc1 = context.WithCancel(context.TODO())
 	sender.TxOptions = &TxOptions{
+		Context: ctx1,
 		Timeout: time.Millisecond,
 		EnsureFunc: func(msg *Message) bool {
 			assert.EqualValues(t, originMsg, msg)
@@ -171,19 +172,19 @@ func TestTransaction(t *testing.T) {
 		return true
 	}
 	sender.Prepare()
-	var ctx, cancelFunc = context.WithCancel(context.TODO())
-	go handler.Prepare().RunCtx(ctx)
+	var ctx2, cancelFunc2 = context.WithCancel(context.TODO())
+	go handler.Prepare().RunCtx(ctx2)
 	sender.Send(originMsg, func() bool {
 		return false
 	})
 	sender.Send(originMsg, func() bool {
 		return true
 	})
-
 	<-exitChan
-	cancelFunc()
-	time.Sleep(time.Millisecond)
-
+	cancelFunc1()
+	cancelFunc2()
+	sender.Wait()
+	handler.Wait()
 	assert.Equal(t, uint32(0), num1)
 	assert.Equal(t, uint32(3), num2)
 }

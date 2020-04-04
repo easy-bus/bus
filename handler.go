@@ -157,7 +157,7 @@ func (h *Handler) handleMsg(data []byte) bool {
 	msg.Retried += 1
 	// 计算多少秒后进行重试
 	if delay := h.RetryDelay(msg.Retried); delay < 0 {
-		if err := h.DLStorage.Store(h.Queue, data); err != nil {
+		if err := h.DLStorage.Store(h.Queue, msg.Payload); err != nil {
 			h.Logger.Errorf("handler [%s] dl store failed, v", h.Queue, err)
 			return false // 死信储存失败
 		}

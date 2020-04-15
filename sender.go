@@ -140,9 +140,7 @@ func (s *Sender) Prepare() *Sender {
 // Send 发送消息
 // msg 发送的消息结构体
 // localTx 本地事务执行函数
-// 若返回值为true表示本地事务执行成功, 则提交消息
-// 若返回值为false表示本地事务执行失败, 则回滚消息
-func (s *Sender) Send(msg *Message, localTx ...func() bool) bool {
+func (s *Sender) Send(msg *Message, localTx ...func() error) bool {
 	if s.ready == false {
 		throw("sender [%s] has not prepared", s.Topic)
 	}
@@ -180,8 +178,9 @@ func (s *Sender) Send(msg *Message, localTx ...func() bool) bool {
 			return false
 		}
 		// 执行本地事务
-		if localTx[0]() == false {
+		if err := localTx[0](); err != nil {
 			s.txRemove(id) // 事务失败即可清理
+			s.Logger.Errorf("local tx failed, %v", err)
 			return false
 		}
 		// 此时无需关心消息是否发送成功, 可依靠日志补偿处理

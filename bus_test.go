@@ -138,7 +138,7 @@ func TestDLStorage(t *testing.T) {
 	<-exitChan
 	cancelFunc()
 	handler.Wait()
-	assert.Equal(t, encode(originMsg), itDLS.dataMap[handler.Queue][0])
+	assert.Equal(t, originMsg.Payload, itDLS.dataMap[handler.Queue][0])
 }
 
 func TestTransaction(t *testing.T) {
@@ -174,11 +174,11 @@ func TestTransaction(t *testing.T) {
 	sender.Prepare()
 	var ctx2, cancelFunc2 = context.WithCancel(context.TODO())
 	go handler.Prepare().RunCtx(ctx2)
-	sender.Send(originMsg, func() bool {
-		return false
+	sender.Send(originMsg, func() error {
+		return errors.New("error")
 	})
-	sender.Send(originMsg, func() bool {
-		return true
+	sender.Send(originMsg, func() error {
+		return nil
 	})
 	<-exitChan
 	cancelFunc1()

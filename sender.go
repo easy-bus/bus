@@ -140,29 +140,26 @@ func (s *Sender) Prepare() *Sender {
 // Send 发送消息
 // msg 发送的消息结构体
 // localTx 本地事务执行函数
-func (s *Sender) Send(msg *Message, localTx ...func() error) bool {
+func (s *Sender) Send(msg *Message, localTx ...func() error) (err error) {
 	if s.ready == false {
 		throw("sender [%s] has not prepared", s.Topic)
 	}
 	defer utils.HandlePanic(func(i interface{}) {
-		s.Logger.Errorf("sender [%s] panic, %v", s.Topic, i)
+		err = fmt.Errorf("sender [%s] panic, %v", s.Topic, i)
 	})
 	if len(localTx) == 0 {
 		// 未使用事务, 直接发布至主题
 		if err := s.Driver.SendToTopic(s.Topic, encode(msg), msg.RouteKey); err != nil {
-			s.Logger.Errorf("sender [%s] with route key [%s] failed, %v", s.Topic, msg.RouteKey, err)
-			return false
+			return fmt.Errorf("sender [%s] with route key [%s] failed, %v", s.Topic, msg.RouteKey, err)
 		}
 	} else if s.TxOptions == nil {
-		s.Logger.Errorf("sender [%s] missing tx options", s.Topic)
-		return false
+		return fmt.Errorf("sender [%s] missing tx options", s.Topic)
 	} else {
 		data := encode(msg)
 		// 消息预发存储
 		id, err := s.TxOptions.TxStorage.Store(data)
 		if err != nil {
-			s.Logger.Errorf("sender [%s] tx store failed, %v", s.Topic, err)
-			return false
+			return fmt.Errorf("sender [%s] tx store failed, %v", s.Topic, err)
 		}
 		// 将操作日志发送至队列
 		err = s.Driver.SendToQueue(
@@ -171,17 +168,15 @@ func (s *Sender) Send(msg *Message, localTx ...func() error) bool {
 			s.TxOptions.Timeout,
 		)
 		if err != nil {
-			s.Logger.Errorf(
+			return fmt.Errorf(
 				"sender [%s] send to queue [%s] with delay [%d] failed, %v",
 				s.Topic, s.TxOptions.recordQueue, s.TxOptions.Timeout, err,
 			)
-			return false
 		}
 		// 执行本地事务
 		if err := localTx[0](); err != nil {
 			s.txRemove(id) // 事务失败即可清理
-			s.Logger.Errorf("local tx failed, %v", err)
-			return false
+			return err
 		}
 		// 此时无需关心消息是否发送成功, 可依靠日志补偿处理
 		if err := s.Driver.SendToTopic(s.Topic, data, msg.RouteKey); err != nil {
@@ -190,7 +185,7 @@ func (s *Sender) Send(msg *Message, localTx ...func() error) bool {
 			s.txRemove(id) // 发送成功即可清理
 		}
 	}
-	return true
+	return nil
 }
 
 // Wait 等待退出

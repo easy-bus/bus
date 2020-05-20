@@ -105,7 +105,7 @@ func TestIdempotent(t *testing.T) {
 	var ctx, cancelFunc = context.WithCancel(context.TODO())
 	go handler.Prepare().RunCtx(ctx)
 	for i := 0; i < 5; i++ {
-		sender.Send(originMsg)
+		assert.Nil(t, sender.Send(originMsg))
 		<-exitChan
 	}
 	cancelFunc()
@@ -134,7 +134,7 @@ func TestDLStorage(t *testing.T) {
 	sender.Prepare()
 	var ctx, cancelFunc = context.WithCancel(context.TODO())
 	go handler.Prepare().RunCtx(ctx)
-	sender.Send(originMsg)
+	assert.Nil(t, sender.Send(originMsg))
 	<-exitChan
 	cancelFunc()
 	handler.Wait()
@@ -174,12 +174,12 @@ func TestTransaction(t *testing.T) {
 	sender.Prepare()
 	var ctx2, cancelFunc2 = context.WithCancel(context.TODO())
 	go handler.Prepare().RunCtx(ctx2)
-	sender.Send(originMsg, func() error {
+	assert.NotNil(t, sender.Send(originMsg, func() error {
 		return errors.New("error")
-	})
-	sender.Send(originMsg, func() error {
+	}))
+	assert.Nil(t, sender.Send(originMsg, func() error {
 		return nil
-	})
+	}))
 	<-exitChan
 	cancelFunc1()
 	cancelFunc2()

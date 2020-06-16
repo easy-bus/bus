@@ -147,7 +147,7 @@ func (s *Sender) Send(msg *Message, localTx ...func() error) (err error) {
 	defer utils.HandlePanic(func(i interface{}) {
 		err = fmt.Errorf("sender [%s] panic, %v", s.Topic, i)
 	})
-	if len(localTx) == 0 {
+	if len(localTx) == 0 || localTx[0] == nil {
 		// 未使用事务, 直接发布至主题
 		if err := s.Driver.SendToTopic(s.Topic, encode(msg), msg.RouteKey); err != nil {
 			return fmt.Errorf("sender [%s] with route key [%s] failed, %v", s.Topic, msg.RouteKey, err)

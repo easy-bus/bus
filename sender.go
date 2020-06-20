@@ -145,7 +145,7 @@ func (s *Sender) Send(msg *Message, localTx ...func() error) (err error) {
 		throw("sender [%s] has not prepared", s.Topic)
 	}
 	defer utils.HandlePanic(func(i interface{}) {
-		err = fmt.Errorf("sender [%s] panic, %v", s.Topic, i)
+		err = fmt.Errorf("sender [%s] panic: %v, call stack: \n%s", s.Topic, i, utils.StackTrace(0))
 	})
 	if len(localTx) == 0 {
 		// 未使用事务, 直接发布至主题

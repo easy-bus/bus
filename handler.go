@@ -143,7 +143,8 @@ func (h *Handler) handleMsg(data []byte) bool {
 	})
 	var msg Message
 	decode(data, &msg)
-	allow, err := h.Idempotent.Acquire(msg.BizUID)
+	key := h.Queue + "." + msg.BizUID
+	allow, err := h.Idempotent.Acquire(key)
 	if err != nil {
 		allow = false // 置为false进行二次确认
 		h.Logger.Errorf("handler [%s] idempotent acquired failed, %v", err)
@@ -169,7 +170,7 @@ func (h *Handler) handleMsg(data []byte) bool {
 		}
 	}
 	// 处理失败, 释放控制权
-	if err := h.Idempotent.Release(msg.BizUID); err != nil {
+	if err := h.Idempotent.Release(key); err != nil {
 		h.Logger.Errorf("handler [%s] idempotent release failed, %v", err)
 	}
 	return true

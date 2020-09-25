@@ -154,6 +154,10 @@ func (h *Handler) handleMsg(data []byte) bool {
 	} else if h.HandleFunc(&msg) {
 		return true // 处理成功
 	}
+	// 处理失败, 释放控制权
+	if err := h.Idempotent.Release(key); err != nil {
+		h.Logger.Errorf("handler [%s] idempotent release failed, %v", err)
+	}
 	// 处理失败累加次数
 	msg.Retried += 1
 	// 计算多少秒后进行重试
@@ -168,10 +172,6 @@ func (h *Handler) handleMsg(data []byte) bool {
 			h.Logger.Errorf("handler [%s] send to queue with delay [%d] failed, %v", h.Queue, delay, err)
 			return false // 重试发送失败
 		}
-	}
-	// 处理失败, 释放控制权
-	if err := h.Idempotent.Release(key); err != nil {
-		h.Logger.Errorf("handler [%s] idempotent release failed, %v", err)
 	}
 	return true
 }

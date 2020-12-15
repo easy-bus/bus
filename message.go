@@ -52,6 +52,6 @@ func encode(data interface{}) []byte {
 // decode 数据解码
 func decode(bts []byte, dest interface{}) {
 	if err := json.Unmarshal(bts, dest); err != nil {
-		panic(fmt.Sprintf("easy-bus: decode error, %v", err))
+		panic(fmt.Sprintf("easy-bus: decode [%s] error, %v", string(bts), err))
 	}
 }

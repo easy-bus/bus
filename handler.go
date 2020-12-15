@@ -95,14 +95,7 @@ func (h *Handler) Prepare() *Handler {
 	if h.RetryDelay == nil {
 		h.RetryDelay = func(int) time.Duration { return -1 }
 	}
-	if err := h.Driver.CreateQueue(h.Queue, h.Delay); err != nil {
-		throw("then handler [%s] create queue failed, %v", h.Queue, err)
-	}
-	if h.Subscribe.Topic != "" {
-		if err := h.Driver.Subscribe(h.Subscribe.Topic, h.Queue, h.Subscribe.RouteKey); err != nil {
-			throw("then handler [%s] subscribe topic [%s] failed, %v", h.Queue, h.Subscribe.Topic, err)
-		}
-	}
+	h.initDriver()
 	h.ready = true
 	h.quit = make(chan struct{})
 	return h
@@ -121,7 +114,7 @@ func (h *Handler) RunCtx(ctx context.Context) {
 	errChan := make(chan error)
 	utils.Goroutine(func() {
 		for err := range errChan {
-			h.Prepare() // 队列级错误尝试恢复
+			h.initDriver() // 队列级错误尝试恢复
 			h.Logger.Errorf("handler [%s] error, %v", h.Queue, err)
 		}
 	})
@@ -175,4 +168,16 @@ func (h *Handler) handleMsg(data []byte) bool {
 		}
 	}
 	return true
+}
+
+// initDriver 驱动初始化
+func (h *Handler) initDriver() {
+	if err := h.Driver.CreateQueue(h.Queue, h.Delay); err != nil {
+		throw("then handler [%s] create queue failed, %v", h.Queue, err)
+	}
+	if h.Subscribe.Topic != "" {
+		if err := h.Driver.Subscribe(h.Subscribe.Topic, h.Queue, h.Subscribe.RouteKey); err != nil {
+			throw("then handler [%s] subscribe topic [%s] failed, %v", h.Queue, h.Subscribe.Topic, err)
+		}
+	}
 }

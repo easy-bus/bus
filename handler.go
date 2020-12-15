@@ -121,6 +121,7 @@ func (h *Handler) RunCtx(ctx context.Context) {
 	errChan := make(chan error)
 	utils.Goroutine(func() {
 		for err := range errChan {
+			h.Prepare() // 队列级错误尝试恢复
 			h.Logger.Errorf("handler [%s] error, %v", h.Queue, err)
 		}
 	})

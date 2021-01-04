@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
@@ -53,16 +54,38 @@ type nullDLStorage struct{}
 
 func (nd nullDLStorage) Store(queue string, data []byte) error { return nil }
 
+func (nd nullDLStorage) Fetch(queue string) (map[string][]byte, error) {
+	return nil, nil
+}
+
+func (nd nullDLStorage) Remove(id string) error { return nil }
+
 // internalDLStorage 内部死信存储
 type internalDLStorage struct {
-	dataMap map[string][][]byte
+	index   map[string]string
+	dataMap map[string]map[string][]byte
 }
 
 func (id *internalDLStorage) Store(queue string, data []byte) error {
 	if id.dataMap == nil {
-		id.dataMap = make(map[string][][]byte)
+		id.index = make(map[string]string)
+		id.dataMap = make(map[string]map[string][]byte)
 	}
-	id.dataMap[queue] = append(id.dataMap[queue], data)
+	if _, ok := id.dataMap[queue]; !ok {
+		id.dataMap[queue] = make(map[string][]byte)
+	}
+	pid := strconv.Itoa(len(id.dataMap[queue]))
+	id.index[pid], id.dataMap[queue][pid] = queue, data
+	return nil
+}
+
+func (id *internalDLStorage) Fetch(queue string) (map[string][]byte, error) {
+	return id.dataMap[queue], nil
+}
+
+func (id *internalDLStorage) Remove(pid string) error {
+	queue := id.index[pid]
+	delete(id.dataMap[queue], pid)
 	return nil
 }
 

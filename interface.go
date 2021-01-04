@@ -24,6 +24,10 @@ type IdempotentInterface interface {
 type DLStorageInterface interface {
 	// Store 存储队列中无法处理的消息内容
 	Store(queue string, data []byte) error
+	// Fetch 取出可重试的消息内容
+	Fetch(queue string) (map[string][]byte, error)
+	// Remove 根据标识移除内容
+	Remove(id string) error
 }
 
 // TXStorageInterface 预发存储接口

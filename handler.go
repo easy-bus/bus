@@ -118,8 +118,15 @@ func (h *Handler) RunCtx(ctx context.Context) {
 			h.Logger.Errorf("handler [%s] error, %v", h.Queue, err)
 		}
 	})
+	ticker := time.NewTicker(time.Minute)
+	utils.Goroutine(func() {
+		for range ticker.C {
+			h.handleRetry()
+		}
+	})
 	h.Driver.ReceiveMessage(ctx, h.Queue, errChan, h.handleMsg)
 	close(errChan) // 关闭错误通道, 退出错误处理协程
+	ticker.Stop()  // 关闭重试定时器, 退出重试处理协程
 	h.quit <- struct{}{}
 }
 
@@ -156,7 +163,7 @@ func (h *Handler) handleMsg(data []byte) bool {
 	msg.Retried += 1
 	// 计算多少秒后进行重试
 	if delay := h.RetryDelay(msg.Retried); delay < 0 {
-		if err := h.DLStorage.Store(h.Queue, msg.Payload); err != nil {
+		if err := h.DLStorage.Store(h.Queue, data); err != nil {
 			h.Logger.Errorf("handler [%s] dl store failed, v", h.Queue, err)
 			return false // 死信储存失败
 		}
@@ -168,6 +175,23 @@ func (h *Handler) handleMsg(data []byte) bool {
 		}
 	}
 	return true
+}
+
+// handleRetry 重试处理失败消息
+func (h *Handler) handleRetry() {
+	rows, err := h.DLStorage.Fetch(h.Queue)
+	if err != nil {
+		h.Logger.Errorf("retry fetch [%s] error, %v", h.Queue, err)
+		return
+	}
+	for id, data := range rows {
+		if h.handleMsg(data) {
+			err = h.DLStorage.Remove(id)
+			if err != nil {
+				h.Logger.Errorf("retry delete [%s] error, %v", id, err)
+			}
+		}
+	}
 }
 
 // initDriver 驱动初始化

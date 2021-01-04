@@ -138,7 +138,7 @@ func TestDLStorage(t *testing.T) {
 	<-exitChan
 	cancelFunc()
 	handler.Wait()
-	assert.Equal(t, originMsg.Payload, itDLS.dataMap[handler.Queue][0])
+	assert.Equal(t, encode(originMsg), itDLS.dataMap[handler.Queue]["0"])
 }
 
 func TestTransaction(t *testing.T) {

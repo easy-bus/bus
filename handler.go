@@ -140,7 +140,8 @@ func (h *Handler) Wait() { <-h.quit }
 // 若返回值为false则表示处理失败, 消息将延迟重试
 func (h *Handler) handleMsg(data []byte) bool {
 	defer utils.HandlePanic(func(i interface{}) {
-		h.Logger.Errorf("handler [%s] panic: %v, call stack: \n%s", h.Queue, i, utils.StackTrace(0))
+		str := "handler [%s] panic: %v, data: %s, call stack: \n%s"
+		h.Logger.Errorf(str, h.Queue, i, string(data), utils.StackTrace(0))
 	})
 	var msg Message
 	decode(data, &msg)

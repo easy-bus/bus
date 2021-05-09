@@ -49,9 +49,6 @@ func (to *TxOptions) prepare(topic string) {
 	}
 	if to.RetryDelay == nil {
 		to.RetryDelay = func(attempts int) time.Duration {
-			if attempts > 5 {
-				return time.Minute
-			}
 			return time.Duration(attempts) * 10 * time.Second
 		}
 	}
@@ -95,9 +92,10 @@ func (s *Sender) Prepare() *Sender {
 	if s.TxOptions != nil {
 		s.TxOptions.prepare(s.Topic)
 		s.txHandler = &Handler{
-			Queue:  s.TxOptions.recordQueue,
-			Driver: s.Driver,
-			Logger: s.Logger,
+			Context: s.TxOptions.Context,
+			Queue:   s.TxOptions.recordQueue,
+			Driver:  s.Driver,
+			Logger:  s.Logger,
 			HandleFunc: func(log *Message) bool {
 				var id string
 				log.Scan(&id)
@@ -131,7 +129,7 @@ func (s *Sender) Prepare() *Sender {
 			EnsureFunc: func(msg *Message) (allow bool) { return true },
 		}
 		s.txHandler.Prepare()
-		go s.txHandler.RunCtx(s.TxOptions.Context)
+		go s.txHandler.Run()
 	}
 	s.ready = true
 	return s

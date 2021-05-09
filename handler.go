@@ -18,6 +18,7 @@ type Subscribe struct {
 
 // Handler 消息处理器
 type Handler struct {
+	Context context.Context
 	// Queue 处理队列的名称
 	Queue string
 
@@ -103,11 +104,6 @@ func (h *Handler) Prepare() *Handler {
 
 // Run 启动处理器
 func (h *Handler) Run() {
-	h.RunCtx(context.Background())
-}
-
-// RunCtx 启动处理器
-func (h *Handler) RunCtx(ctx context.Context) {
 	if h.ready == false {
 		throw("run is forbidden when the handler [%s] has not prepared", h.Queue)
 	}
@@ -124,10 +120,16 @@ func (h *Handler) RunCtx(ctx context.Context) {
 			h.handleRetry()
 		}
 	})
-	h.Driver.ReceiveMessage(ctx, h.Queue, errChan, h.handleMsg)
+	h.Driver.ReceiveMessage(h.Context, h.Queue, errChan, h.handleMsg)
 	close(errChan) // 关闭错误通道, 退出错误处理协程
 	ticker.Stop()  // 关闭重试定时器, 退出重试处理协程
 	h.quit <- struct{}{}
+}
+
+// RunCtx 启动处理器
+func (h *Handler) RunCtx(ctx context.Context) {
+	h.Context = ctx
+	h.Run()
 }
 
 // Wait 等待退出

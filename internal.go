@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
-	"github.com/letsfire/utils"
 )
 
 // stderrLogger 默认错误日志
@@ -98,7 +96,7 @@ func (it *internalTXStorage) Store(data []byte) (string, error) {
 	if it.dataMap == nil {
 		it.dataMap = make(map[string][]byte)
 	}
-	id := utils.GenerateSeqId()
+	id := generateSeqId()
 	it.dataMap[id] = data
 	return id, nil
 }
@@ -188,7 +186,7 @@ func (id *internalDriver) ReceiveMessage(ctx context.Context, queue string, errC
 		case <-ctx.Done():
 			return
 		case msg := <-id.queues[queue].msgChan:
-			utils.Goroutine(func() {
+			goroutine(func() {
 				if msg.delay > 0 {
 					<-time.NewTimer(msg.delay).C
 				}

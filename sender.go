@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/letsfire/utils"
 )
 
 // TxOptions 事务配置
@@ -142,8 +140,8 @@ func (s *Sender) Send(msg *Message, localTx ...func() error) (err error) {
 	if s.ready == false {
 		throw("sender [%s] has not prepared", s.Topic)
 	}
-	defer utils.HandlePanic(func(i interface{}) {
-		err = fmt.Errorf("sender [%s] panic: %v, call stack: \n%s", s.Topic, i, utils.StackTrace(0))
+	defer handlePanic(func(i interface{}) {
+		err = fmt.Errorf("sender [%s] panic: %v, call stack: \n%s", s.Topic, i, stackTrace(0))
 	})
 	if len(localTx) == 0 || localTx[0] == nil {
 		// 未使用事务, 直接发布至主题

@@ -40,7 +40,7 @@ func Handler(
 type commonEnsure func(ctx context.Context, id string) bool
 type commonHandler func(ctx context.Context, id string) error
 
-func runCommonHandler(topic, routeKey, queue string, handler commonHandler, ensure commonEnsure) *bus.Handler {
+func RunCommonHandler(topic, routeKey, queue string, handler commonHandler, ensure commonEnsure) *bus.Handler {
 	h := Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
@@ -57,7 +57,7 @@ func runCommonHandler(topic, routeKey, queue string, handler commonHandler, ensu
 type commonExEnsure func(ctx context.Context, id string, ex Extend) bool
 type commonExHandler func(ctx context.Context, id string, ex Extend) error
 
-func runCommonExHandler(topic, routeKey, queue string, handler commonExHandler, ensure commonExEnsure) *bus.Handler {
+func RunCommonExHandler(topic, routeKey, queue string, handler commonExHandler, ensure commonExEnsure) *bus.Handler {
 	h := Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
@@ -76,7 +76,7 @@ func runCommonExHandler(topic, routeKey, queue string, handler commonExHandler, 
 type batchExEnsure func(ctx context.Context, id []string, ex Extend) bool
 type batchExHandler func(ctx context.Context, id []string, ex Extend) error
 
-func runBatchExHandler(topic, routeKey, queue string, handler batchExHandler, ensure batchExEnsure) *bus.Handler {
+func RunBatchExHandler(topic, routeKey, queue string, handler batchExHandler, ensure batchExEnsure) *bus.Handler {
 	h := Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
@@ -95,7 +95,7 @@ func runBatchExHandler(topic, routeKey, queue string, handler batchExHandler, en
 type specificEnsure func(ctx context.Context, message *bus.Message) bool
 type specificHandler func(ctx context.Context, message *bus.Message) error
 
-func runSpecificHandler(topic, routeKey, queue string, handler specificHandler, ensure specificEnsure) *bus.Handler {
+func RunSpecificHandler(topic, routeKey, queue string, handler specificHandler, ensure specificEnsure) *bus.Handler {
 	h := Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {

@@ -3,8 +3,6 @@ package bus
 import (
 	"context"
 	"time"
-
-	"github.com/letsfire/utils"
 )
 
 // Subscribe 处理器订阅
@@ -108,14 +106,14 @@ func (h *Handler) Run() {
 		throw("run is forbidden when the handler [%s] has not prepared", h.Queue)
 	}
 	errChan := make(chan error)
-	utils.Goroutine(func() {
+	goroutine(func() {
 		for err := range errChan {
 			h.initDriver() // 队列级错误尝试恢复
 			h.Logger.Errorf("handler [%s] error, %v", h.Queue, err)
 		}
 	})
 	ticker := time.NewTicker(time.Minute)
-	utils.Goroutine(func() {
+	goroutine(func() {
 		for range ticker.C {
 			h.handleRetry()
 		}
@@ -141,9 +139,9 @@ func (h *Handler) Wait() { <-h.quit }
 // 若返回值为true则表示处理成功, 将删除该消息
 // 若返回值为false则表示处理失败, 消息将延迟重试
 func (h *Handler) handleMsg(data []byte) bool {
-	defer utils.HandlePanic(func(i interface{}) {
+	defer handlePanic(func(i interface{}) {
 		str := "handler [%s] panic: %v, data: %s, call stack: \n%s"
-		h.Logger.Errorf(str, h.Queue, i, string(data), utils.StackTrace(0))
+		h.Logger.Errorf(str, h.Queue, i, string(data), stackTrace(0))
 	})
 	var msg Message
 	decode(data, &msg)

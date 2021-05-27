@@ -3,8 +3,6 @@ package bus
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/letsfire/utils"
 )
 
 // Message 消息结构体
@@ -28,7 +26,7 @@ func (m *Message) Scan(dest interface{}) { decode(m.Payload, dest) }
 
 // MessageAutoId 实例化消息
 func MessageAutoId(payload interface{}, routeKey string) *Message {
-	return MessageWithId(utils.GenerateSeqId(), payload, routeKey)
+	return MessageWithId(generateSeqId(), payload, routeKey)
 }
 
 // MessageWithId 实例化消息

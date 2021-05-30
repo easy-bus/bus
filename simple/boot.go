@@ -22,7 +22,6 @@ func StartUp(
 	ide bus.IdempotentInterface,
 	log bus.LoggerInterface,
 ) {
-	ShutDown() // 关闭可能存在的
 	driver, dlStorage, txStorage, idempotent, logger = drv, dls, txs, ide, log
 	for _, sender := range senderGroup {
 		sender.Prepare()
@@ -73,7 +72,6 @@ func (ccs *cancels) exec() {
 	for _, cancel := range *ccs {
 		cancel()
 	}
-	*ccs = make(cancels, 0)
 }
 
 func (ccs *cancels) newCtx() context.Context {

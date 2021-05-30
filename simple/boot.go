@@ -21,8 +21,15 @@ func StartUp(
 	txs bus.TXStorageInterface,
 	ide bus.IdempotentInterface,
 	log bus.LoggerInterface,
+	senderFactory, handlerFactory func(),
 ) {
-	driver, dlStorage, txStorage, idempotent, logger = drv, dls, txs, ide, log
+	driver = drv
+	dlStorage = dls
+	txStorage = txs
+	idempotent = ide
+	logger = log
+	senderFactory()
+	handlerFactory()
 	for _, sender := range senderGroup {
 		sender.Prepare()
 	}

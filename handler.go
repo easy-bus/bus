@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -16,7 +17,9 @@ type Subscribe struct {
 
 // Handler 消息处理器
 type Handler struct {
+	sync.Once
 	Context context.Context
+
 	// Queue 处理队列的名称
 	Queue string
 
@@ -67,36 +70,35 @@ type Handler struct {
 
 // Prepare 准备就绪
 func (h *Handler) Prepare() *Handler {
-	if h.ready {
-		return h
-	}
-	if h.Queue == "" {
-		throw("the handler missing queue name")
-	}
-	if h.Driver == nil {
-		throw("the handler [%s] missing driver instance", h.Queue)
-	}
-	if h.HandleFunc == nil {
-		throw("the handler [%s] missing handle function", h.Queue)
-	}
-	if h.Logger == nil {
-		h.Logger = stderrLogger{}
-	}
-	if h.DLStorage == nil {
-		h.DLStorage = nullDLStorage{}
-	}
-	if h.Idempotent == nil {
-		h.Idempotent = nullIdempotent{}
-	}
-	if h.EnsureFunc == nil {
-		h.EnsureFunc = func(*Message) bool { return false }
-	}
-	if h.RetryDelay == nil {
-		h.RetryDelay = func(int) time.Duration { return -1 }
-	}
-	h.initDriver()
-	h.ready = true
-	h.quit = make(chan struct{})
+	h.Do(func() {
+		if h.Queue == "" {
+			throw("the handler missing queue name")
+		}
+		if h.Driver == nil {
+			throw("the handler [%s] missing driver instance", h.Queue)
+		}
+		if h.HandleFunc == nil {
+			throw("the handler [%s] missing handle function", h.Queue)
+		}
+		if h.Logger == nil {
+			h.Logger = stderrLogger{}
+		}
+		if h.DLStorage == nil {
+			h.DLStorage = nullDLStorage{}
+		}
+		if h.Idempotent == nil {
+			h.Idempotent = nullIdempotent{}
+		}
+		if h.EnsureFunc == nil {
+			h.EnsureFunc = func(*Message) bool { return false }
+		}
+		if h.RetryDelay == nil {
+			h.RetryDelay = func(int) time.Duration { return -1 }
+		}
+		h.initDriver()
+		h.ready = true
+		h.quit = make(chan struct{})
+	})
 	return h
 }
 

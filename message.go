@@ -2,7 +2,6 @@ package bus
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 // Message 消息结构体
@@ -40,16 +39,17 @@ func MessageWithId(id string, payload interface{}, routeKey string) *Message {
 
 // encode 数据编码
 func encode(data interface{}) []byte {
-	if bts, err := json.Marshal(data); err != nil {
-		panic(fmt.Sprintf("easy-bus: encode error, %v", err))
-	} else {
-		return bts
+	bts, err := json.Marshal(data)
+	if err != nil {
+		throw("easy-bus: encode error, %v", err)
 	}
+	return bts
 }
 
 // decode 数据解码
 func decode(bts []byte, dest interface{}) {
-	if err := json.Unmarshal(bts, dest); err != nil {
-		panic(fmt.Sprintf("easy-bus: decode [%s] error, %v", string(bts), err))
+	err := json.Unmarshal(bts, dest)
+	if err != nil {
+		throw("easy-bus: decode [%s] error, %v", string(bts), err)
 	}
 }

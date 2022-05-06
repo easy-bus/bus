@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -34,7 +35,7 @@ type TxOptions struct {
 
 func (to *TxOptions) prepare(topic string) {
 	if to.Timeout <= 0 {
-		throw("sender [%s] the timeout of tx option must greater than zero", topic)
+		throw("sender [%s] the timeout of tx option must > 0", topic)
 	}
 	if to.EnsureFunc == nil {
 		throw("sender [%s] the ensure func of tx option is missing", topic)
@@ -55,6 +56,8 @@ func (to *TxOptions) prepare(topic string) {
 
 // Sender 发送器
 type Sender struct {
+	sync.Once
+
 	// Topic 发送主题
 	Topic string
 
@@ -75,61 +78,60 @@ type Sender struct {
 
 // Prepare 创建主题和日志队列
 func (s *Sender) Prepare() *Sender {
-	if s.ready {
-		return s
-	}
-	if s.Driver == nil {
-		throw("sender [%s] missing driver instance", s.Topic)
-	}
-	if s.Logger == nil {
-		s.Logger = stderrLogger{}
-	}
-	if err := s.Driver.CreateTopic(s.Topic); err != nil {
-		throw("sender [%s] create topic error, %v", s.Topic, err)
-	}
-	if s.TxOptions != nil {
-		s.TxOptions.prepare(s.Topic)
-		s.txHandler = &Handler{
-			Context: s.TxOptions.Context,
-			Queue:   s.TxOptions.recordQueue,
-			Driver:  s.Driver,
-			Logger:  s.Logger,
-			HandleFunc: func(log *Message) bool {
-				var id string
-				log.Scan(&id)
-				data, err := s.TxOptions.TxStorage.Fetch(id)
-				if err != nil {
-					s.Logger.Errorf("sender [%s] tx fetch failed, %v", s.Topic, err)
-					return false
-				} else if data == nil {
-					// 已经发布成功
-					s.txRemove(id)
-					return true
-				}
-				var msg Message
-				decode(data, &msg)
-				if s.TxOptions.EnsureFunc(&msg) {
-					// 事务处理成功, 消息未发送
-					err = s.Driver.SendToTopic(s.Topic, data, msg.RouteKey)
-					if err == nil {
+	s.Do(func() {
+		if s.Driver == nil {
+			throw("sender [%s] missing driver instance", s.Topic)
+		}
+		if s.Logger == nil {
+			s.Logger = stderrLogger{}
+		}
+		if err := s.Driver.CreateTopic(s.Topic); err != nil {
+			throw("sender [%s] create topic error, %v", s.Topic, err)
+		}
+		if s.TxOptions != nil {
+			s.TxOptions.prepare(s.Topic)
+			s.txHandler = &Handler{
+				Context: s.TxOptions.Context,
+				Queue:   s.TxOptions.recordQueue,
+				Driver:  s.Driver,
+				Logger:  s.Logger,
+				HandleFunc: func(log *Message) bool {
+					var id string
+					log.Scan(&id)
+					data, err := s.TxOptions.TxStorage.Fetch(id)
+					if err != nil {
+						s.Logger.Errorf("sender [%s] tx fetch failed, %v", s.Topic, err)
+						return false
+					} else if data == nil {
+						// 已经发布成功
 						s.txRemove(id)
 						return true
 					}
-					s.Logger.Errorf("sender [%s] with route key [%s] failed, %v", s.Topic, msg.RouteKey, err)
-					return false
-				} else {
-					// 事务未处理成功, 消息丢弃
-					s.txRemove(id)
-					return true
-				}
-			},
-			RetryDelay: s.TxOptions.RetryDelay,
-			EnsureFunc: func(msg *Message) (allow bool) { return true },
+					var msg Message
+					decode(data, &msg)
+					if s.TxOptions.EnsureFunc(&msg) {
+						// 事务处理成功, 消息未发送
+						err = s.Driver.SendToTopic(s.Topic, data, msg.RouteKey)
+						if err == nil {
+							s.txRemove(id)
+							return true
+						}
+						s.Logger.Errorf("sender [%s] with route key [%s] failed, %v", s.Topic, msg.RouteKey, err)
+						return false
+					} else {
+						// 事务未处理成功, 消息丢弃
+						s.txRemove(id)
+						return true
+					}
+				},
+				RetryDelay: s.TxOptions.RetryDelay,
+				EnsureFunc: func(msg *Message) (allow bool) { return true },
+			}
+			s.txHandler.Prepare()
+			go s.txHandler.Run()
 		}
-		s.txHandler.Prepare()
-		go s.txHandler.Run()
-	}
-	s.ready = true
+		s.ready = true
+	})
 	return s
 }
 

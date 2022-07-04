@@ -2,6 +2,7 @@ package simple
 
 import (
 	"context"
+
 	"github.com/easy-bus/bus"
 )
 
@@ -21,21 +22,12 @@ func StartUp(
 	txs bus.TXStorageInterface,
 	ide bus.IdempotentInterface,
 	log bus.LoggerInterface,
-	senderFactory, handlerFactory func(),
 ) {
 	driver = drv
 	dlStorage = dls
 	txStorage = txs
 	idempotent = ide
 	logger = log
-	senderFactory()
-	handlerFactory()
-	for _, sender := range senderGroup {
-		sender.Prepare()
-	}
-	for _, handler := range handlerGroup {
-		go handler.Prepare().Run()
-	}
 }
 
 func ShutDown() {

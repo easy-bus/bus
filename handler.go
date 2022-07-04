@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -66,6 +67,9 @@ type Handler struct {
 
 	// 退出信号
 	quit chan struct{}
+
+	// 是否运行
+	running int32
 }
 
 // Prepare 准备就绪
@@ -107,6 +111,9 @@ func (h *Handler) Run() {
 	if h.ready == false {
 		throw("run is forbidden when the handler [%s] has not prepared", h.Queue)
 	}
+	if !atomic.CompareAndSwapInt32(&h.running, 0, 1) {
+		return // 已在运行中
+	}
 	errChan := make(chan error)
 	goroutine(func() {
 		for err := range errChan {
@@ -123,6 +130,7 @@ func (h *Handler) Run() {
 	h.Driver.ReceiveMessage(h.Context, h.Queue, errChan, h.handleMsg)
 	close(errChan) // 关闭错误通道, 退出错误处理协程
 	ticker.Stop()  // 关闭重试定时器, 退出重试处理协程
+	atomic.StoreInt32(&h.running, 0)
 	h.quit <- struct{}{}
 }
 

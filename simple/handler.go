@@ -3,8 +3,9 @@ package simple
 import (
 	"context"
 	"fmt"
-	"github.com/easy-bus/bus"
 	"time"
+
+	"github.com/easy-bus/bus"
 )
 
 func Handler(
@@ -13,7 +14,7 @@ func Handler(
 	ensure func(context.Context, *bus.Message) bool,
 ) *bus.Handler {
 	ctx := cancelGroup.newCtx()
-	return &bus.Handler{
+	hdr := &bus.Handler{
 		Context: ctx,
 		Queue:   queue,
 		Subscribe: bus.Subscribe{
@@ -34,6 +35,8 @@ func Handler(
 			return time.Duration(1 - attempts) // 立即重试且重试一次
 		},
 	}
+	go hdr.Prepare().Run()
+	return handlerGroup.add(hdr)
 }
 
 // Common
@@ -41,7 +44,7 @@ type commonEnsure func(ctx context.Context, id string) bool
 type commonHandler func(ctx context.Context, id string) error
 
 func RunCommonHandler(topic, routeKey, queue string, handler commonHandler, ensure commonEnsure) *bus.Handler {
-	return handlerGroup.add(Handler(
+	return Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
 			return handler(ctx, LoadCommon(message).ID)
@@ -49,7 +52,7 @@ func RunCommonHandler(topic, routeKey, queue string, handler commonHandler, ensu
 		func(ctx context.Context, message *bus.Message) bool {
 			return ensure == nil || ensure(ctx, LoadCommon(message).ID)
 		},
-	))
+	)
 }
 
 // CommonEX
@@ -57,7 +60,7 @@ type commonExEnsure func(ctx context.Context, id string, ex Extend) bool
 type commonExHandler func(ctx context.Context, id string, ex Extend) error
 
 func RunCommonExHandler(topic, routeKey, queue string, handler commonExHandler, ensure commonExEnsure) *bus.Handler {
-	return handlerGroup.add(Handler(
+	return Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
 			var evt = LoadCommonEx(message)
@@ -67,7 +70,7 @@ func RunCommonExHandler(topic, routeKey, queue string, handler commonExHandler, 
 			var evt = LoadCommonEx(message)
 			return ensure == nil || ensure(ctx, evt.ID, evt.EX)
 		},
-	))
+	)
 }
 
 // BatchEX
@@ -75,7 +78,7 @@ type batchExEnsure func(ctx context.Context, id []string, ex Extend) bool
 type batchExHandler func(ctx context.Context, id []string, ex Extend) error
 
 func RunBatchExHandler(topic, routeKey, queue string, handler batchExHandler, ensure batchExEnsure) *bus.Handler {
-	return handlerGroup.add(Handler(
+	return Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
 			var evt = LoadBatchEx(message)
@@ -85,7 +88,7 @@ func RunBatchExHandler(topic, routeKey, queue string, handler batchExHandler, en
 			var evt = LoadBatchEx(message)
 			return ensure == nil || ensure(ctx, evt.IDS, evt.EX)
 		},
-	))
+	)
 }
 
 // 自定义事件结构体
@@ -93,7 +96,7 @@ type specificEnsure func(ctx context.Context, message *bus.Message) bool
 type specificHandler func(ctx context.Context, message *bus.Message) error
 
 func RunSpecificHandler(topic, routeKey, queue string, handler specificHandler, ensure specificEnsure) *bus.Handler {
-	return handlerGroup.add(Handler(
+	return Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
 			return handler(ctx, message)
@@ -101,5 +104,5 @@ func RunSpecificHandler(topic, routeKey, queue string, handler specificHandler, 
 		func(ctx context.Context, message *bus.Message) bool {
 			return ensure == nil || ensure(ctx, message)
 		},
-	))
+	)
 }

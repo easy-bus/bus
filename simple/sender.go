@@ -1,8 +1,9 @@
 package simple
 
 import (
-	"github.com/easy-bus/bus"
 	"time"
+
+	"github.com/easy-bus/bus"
 )
 
 func Sender(topic string, ensure func(*bus.Message) bool, timeout time.Duration) *bus.Sender {
@@ -22,5 +23,5 @@ func Sender(topic string, ensure func(*bus.Message) bool, timeout time.Duration)
 			},
 		},
 	}
-	return senderGroup.add(s)
+	return senderGroup.add(s.Prepare())
 }

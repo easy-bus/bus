@@ -12,6 +12,7 @@ func Handler(
 	queue, topic, routeKey string,
 	handler func(context.Context, *bus.Message) error,
 	ensure func(context.Context, *bus.Message) bool,
+	opts ...bus.HandlerOpt,
 ) *bus.Handler {
 	ctx := cancelGroup.newCtx()
 	hdr := &bus.Handler{
@@ -35,6 +36,9 @@ func Handler(
 			return time.Duration(1 - attempts) // 立即重试且重试一次
 		},
 	}
+	for _, opt := range opts {
+		opt(hdr) // set option
+	}
 	go hdr.Prepare().Run()
 	return handlerGroup.add(hdr)
 }
@@ -43,7 +47,7 @@ func Handler(
 type commonEnsure func(ctx context.Context, id string) bool
 type commonHandler func(ctx context.Context, id string) error
 
-func RunCommonHandler(topic, routeKey, queue string, handler commonHandler, ensure commonEnsure) *bus.Handler {
+func RunCommonHandler(topic, routeKey, queue string, handler commonHandler, ensure commonEnsure, opts ...bus.HandlerOpt) *bus.Handler {
 	return Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
@@ -52,6 +56,7 @@ func RunCommonHandler(topic, routeKey, queue string, handler commonHandler, ensu
 		func(ctx context.Context, message *bus.Message) bool {
 			return ensure == nil || ensure(ctx, LoadCommon(message).ID)
 		},
+		opts...,
 	)
 }
 
@@ -59,7 +64,7 @@ func RunCommonHandler(topic, routeKey, queue string, handler commonHandler, ensu
 type commonExEnsure func(ctx context.Context, id string, ex Extend) bool
 type commonExHandler func(ctx context.Context, id string, ex Extend) error
 
-func RunCommonExHandler(topic, routeKey, queue string, handler commonExHandler, ensure commonExEnsure) *bus.Handler {
+func RunCommonExHandler(topic, routeKey, queue string, handler commonExHandler, ensure commonExEnsure, opts ...bus.HandlerOpt) *bus.Handler {
 	return Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
@@ -70,6 +75,7 @@ func RunCommonExHandler(topic, routeKey, queue string, handler commonExHandler, 
 			var evt = LoadCommonEx(message)
 			return ensure == nil || ensure(ctx, evt.ID, evt.EX)
 		},
+		opts...,
 	)
 }
 
@@ -77,7 +83,7 @@ func RunCommonExHandler(topic, routeKey, queue string, handler commonExHandler, 
 type batchExEnsure func(ctx context.Context, id []string, ex Extend) bool
 type batchExHandler func(ctx context.Context, id []string, ex Extend) error
 
-func RunBatchExHandler(topic, routeKey, queue string, handler batchExHandler, ensure batchExEnsure) *bus.Handler {
+func RunBatchExHandler(topic, routeKey, queue string, handler batchExHandler, ensure batchExEnsure, opts ...bus.HandlerOpt) *bus.Handler {
 	return Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
@@ -88,6 +94,7 @@ func RunBatchExHandler(topic, routeKey, queue string, handler batchExHandler, en
 			var evt = LoadBatchEx(message)
 			return ensure == nil || ensure(ctx, evt.IDS, evt.EX)
 		},
+		opts...,
 	)
 }
 
@@ -95,7 +102,7 @@ func RunBatchExHandler(topic, routeKey, queue string, handler batchExHandler, en
 type specificEnsure func(ctx context.Context, message *bus.Message) bool
 type specificHandler func(ctx context.Context, message *bus.Message) error
 
-func RunSpecificHandler(topic, routeKey, queue string, handler specificHandler, ensure specificEnsure) *bus.Handler {
+func RunSpecificHandler(topic, routeKey, queue string, handler specificHandler, ensure specificEnsure, opts ...bus.HandlerOpt) *bus.Handler {
 	return Handler(
 		fmt.Sprintf("%s.%s", topic, queue), topic, routeKey,
 		func(ctx context.Context, message *bus.Message) error {
@@ -104,5 +111,6 @@ func RunSpecificHandler(topic, routeKey, queue string, handler specificHandler, 
 		func(ctx context.Context, message *bus.Message) bool {
 			return ensure == nil || ensure(ctx, message)
 		},
+		opts...,
 	)
 }

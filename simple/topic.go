@@ -2,8 +2,9 @@ package simple
 
 import (
 	"context"
-	"github.com/easy-bus/bus"
 	"time"
+
+	"github.com/easy-bus/bus"
 )
 
 type Topic string
@@ -17,34 +18,34 @@ func (t Topic) Sender(
 func (t Topic) Handler(
 	queue, routeKey string,
 	handler func(context.Context, *bus.Message) error,
-	ensure func(context.Context, *bus.Message) bool) *bus.Handler {
-	return Handler(queue, string(t), routeKey, handler, ensure)
+	ensure func(context.Context, *bus.Message) bool, opts ...bus.HandlerOpt) *bus.Handler {
+	return Handler(queue, string(t), routeKey, handler, ensure, opts...)
 }
 
 func (t Topic) RunCommonHandler(
 	routeKey, queue string,
 	handler commonHandler,
-	ensure commonEnsure) *bus.Handler {
-	return RunCommonHandler(string(t), routeKey, queue, handler, ensure)
+	ensure commonEnsure, opts ...bus.HandlerOpt) *bus.Handler {
+	return RunCommonHandler(string(t), routeKey, queue, handler, ensure, opts...)
 }
 
 func (t Topic) RunCommonExHandler(
 	routeKey, queue string,
 	handler commonExHandler,
-	ensure commonExEnsure) *bus.Handler {
-	return RunCommonExHandler(string(t), routeKey, queue, handler, ensure)
+	ensure commonExEnsure, opts ...bus.HandlerOpt) *bus.Handler {
+	return RunCommonExHandler(string(t), routeKey, queue, handler, ensure, opts...)
 }
 
 func (t Topic) RunBatchExHandler(
 	routeKey, queue string,
 	handler batchExHandler,
-	ensure batchExEnsure) *bus.Handler {
-	return RunBatchExHandler(string(t), routeKey, queue, handler, ensure)
+	ensure batchExEnsure, opts ...bus.HandlerOpt) *bus.Handler {
+	return RunBatchExHandler(string(t), routeKey, queue, handler, ensure, opts...)
 }
 
 func (t Topic) RunSpecificHandler(
 	routeKey, queue string,
 	handler specificHandler,
-	ensure specificEnsure) *bus.Handler {
-	return RunSpecificHandler(string(t), routeKey, queue, handler, ensure)
+	ensure specificEnsure, opts ...bus.HandlerOpt) *bus.Handler {
+	return RunSpecificHandler(string(t), routeKey, queue, handler, ensure, opts...)
 }

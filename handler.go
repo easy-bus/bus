@@ -148,8 +148,9 @@ func (h *Handler) Wait() { <-h.quit }
 // 屏蔽复杂度, 确保消息高效无误的流转
 // 若返回值为true则表示处理成功, 将删除该消息
 // 若返回值为false则表示处理失败, 消息将延迟重试
-func (h *Handler) handleMsg(data []byte) bool {
+func (h *Handler) handleMsg(data []byte) (done bool) {
 	defer handlePanic(func(i interface{}) {
+		done = h.DLStorage.Store(h.Queue, data) == nil
 		str := "handler [%s] panic: %v, data: %s, call stack: \n%s"
 		h.Logger.Errorf(str, h.Queue, i, string(data), stackTrace(0))
 	})
